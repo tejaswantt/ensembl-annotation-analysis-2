@@ -1,121 +1,165 @@
-# Genome Annotation Quality Analysis & Comparative Reporting Framework
+# Ensembl Genome Annotation Analysis Framework
 
-A modular Python-based system for analyzing genome annotation quality using Ensembl data.  
-This project focuses on feature engineering, taxonomy-aware comparison, multi-layer outlier detection, and structured QC reporting.
-
----
-
-## 🚀 Overview
-
-Genome annotation datasets contain complex structural information about genes, transcripts, and exons across multiple species. While Ensembl provides access to these metrics, there is limited support for systematic analysis and comparative evaluation.
-
-This project builds a **complete analysis pipeline** that:
-
-- Extracts genome annotation metrics from Ensembl databases
-- Computes derived features for cross-species comparison
-- Performs taxonomy-based grouping
-- Detects anomalies using multiple statistical methods
-- Generates structured quality control (QC) reports
+A Python-based pipeline for genome annotation quality assessment across multiple species. The framework retrieves annotation metrics from Ensembl core databases, computes derived features, groups species by taxonomy, detects anomalous annotation patterns, and generates structured quality control reports.
 
 ---
 
-## 🧠 Key Features
+## Background
 
-### 1. Feature Engineering
-- Coding Ratio
-- Gene Density
-- Transcript Density
-- Average Gene Length
-- Average Transcript Length
+Genome annotation projects produce large volumes of structured data describing genes, transcripts, exons, and associated metrics across hundreds of species. As the number of annotated genomes grows, manually inspecting raw metrics for quality issues becomes impractical.
+
+This project addresses that by building an automated analysis layer on top of Ensembl's existing tracking system. All statistical comparisons are performed **within taxonomic groups** (e.g., mammals, birds, fish) rather than globally, ensuring biologically meaningful results.
 
 ---
 
-### 2. Taxonomy-Based Grouping
-- Groups genomes into biologically meaningful categories (e.g., mammals, birds, fish)
-- Enables context-aware comparisons
+## Features
+
+- SQL-based extraction of annotation statistics from Ensembl core databases
+- Computation of derived features: coding ratio, gene density, transcript density, average gene/transcript lengths
+- Taxonomy-based grouping of species using `species.classification` metadata
+- Multi-layer outlier detection: z-score, quantile, and PCA-based methods
+- Composite QC scoring with status labels: `HEALTHY`, `WARNING`, `NEEDS REVIEW`
+- Per-genome reports with metrics, rankings, and anomaly flags
+- Visualization outputs: histograms, boxplots, PCA scatter plots, comparative charts
 
 ---
 
-### 3. Multi-Layer Outlier Detection
-- **Z-score Analysis** → detects statistical deviation  
-- **Quantile-Based Detection** → identifies extreme values  
-- **PCA-Based Detection** → captures multivariate anomalies  
+## Project Structure
+
+```
+ensembl-annotation-analysis/
+├── data/
+│   └── extraction.py          # Ensembl DB connection and SQL queries
+├── features/
+│   └── engineering.py         # Derived feature computation
+├── taxonomy/
+│   └── grouping.py            # Taxonomy-based species classification
+├── analysis/
+│   ├── zscore.py              # Z-score outlier detection
+│   ├── quantile.py            # Quantile-based outlier detection
+│   └── pca.py                 # PCA multivariate analysis
+├── scoring/
+│   └── qc.py                  # QC scoring and status classification
+├── reporting/
+│   └── report.py              # Per-genome report generation
+├── visualization/
+│   └── plots.py               # Plot generation
+├── genome_analysis.ipynb      # Exploratory analysis notebook
+└── README.md
+```
 
 ---
 
-### 4. Scoring & QC Classification
-Each genome is assigned:
-- A **quality score**
-- A **QC status**:
-  - `HEALTHY`
-  - `WARNING`
-  - `NEEDS REVIEW`
+## Installation
+
+```bash
+pip install pymysql sqlalchemy pandas numpy scikit-learn matplotlib seaborn
+```
 
 ---
 
-### 5. Comparative Analysis
-- Ranking within taxonomic groups
-- Cross-species metric comparison
-- Identification of anomalous genomes
+## Usage
+
+### Connect to Ensembl
+
+```python
+import pymysql
+
+conn = pymysql.connect(
+    host='ensembldb.ensembl.org',
+    user='anonymous',
+    password=''
+)
+```
+
+### Run the Pipeline
+
+```python
+from data.extraction import get_species_data
+from features.engineering import compute_features
+from taxonomy.grouping import assign_taxonomy
+from analysis.zscore import detect_zscore_outliers
+from analysis.quantile import detect_quantile_outliers
+from analysis.pca import detect_pca_outliers
+from scoring.qc import classify_qc_status
+from reporting.report import generate_report
+
+df = get_species_data(species_list, conn)
+df = compute_features(df)
+df = assign_taxonomy(df)
+df = detect_zscore_outliers(df)
+df = detect_quantile_outliers(df)
+df = detect_pca_outliers(df)
+df = classify_qc_status(df)
+
+generate_report(df, output_dir='reports/')
+```
 
 ---
 
-### 6. Report Generation
-Each genome report includes:
-- Key metrics and derived features  
-- Outlier flags  
-- QC score and status  
-- Ranking within group  
+## Computed Features
+
+| Feature | Formula |
+|---|---|
+| `coding_cnt` | `transcript_count - noncoding_cnt` |
+| `coding_ratio` | `coding_cnt / transcript_count` |
+| `gene_density` | `gene_count / ref_length` |
+| `transcript_density` | `transcript_count / ref_length` |
+| `avg_gene_length` | `total_gene_length / gene_count` |
+| `avg_transcript_length` | `total_transcript_length / transcript_count` |
 
 ---
 
-## 🏗️ System Architecture
-- data_extraction
-- feature_engineering
--outlier_detection
-- scoring
-- reporting
-- visualization
-- notebooks
+## Outlier Detection
 
- 
----
+Detection is performed within each taxonomy group to avoid cross-group bias.
 
-## ⚠️ Challenges Addressed
+**Z-Score** — Flags genomes where a feature deviates more than 3 standard deviations from the group mean.
 
-- Handling heterogeneous genome annotation data  
-- Comparing genomes across different scales  
-- Detecting anomalies using multiple statistical methods  
-- Producing interpretable QC outputs  
+**Quantile** — Flags genomes in extreme percentile ranges. Robust to non-normal distributions.
+
+**PCA** — Reduces the feature space to principal components and flags genomes that are distant from the group centroid in the transformed space. Captures multivariate anomalies not visible in individual metrics.
+
+Results from all three methods are combined into a single `final_outlier` label per genome.
 
 ---
 
-## 🔬 Future Work
+## QC Classification
 
-- Integration with Ensembl web application  
-- Interactive dashboards for visualization  
-- Automated anomaly alerts  
-- Advanced ML-based anomaly detection  
-
----
-
-## 🤝 Contribution
-
-This project is part of a Google Summer of Code (GSoC) proposal focused on improving genome annotation analysis workflows.
-
-Contributions, suggestions, and feedback are welcome!
+| Status | Condition |
+|---|---|
+| `HEALTHY` | No anomalies detected across methods |
+| `WARNING` | Flagged by one detection method |
+| `NEEDS REVIEW` | Flagged by two or more detection methods |
 
 ---
 
-## 📎 References
+## Taxonomy Groups
 
-- Ensembl Genome Browser  
-- Genome Annotation Data Models  
-- Statistical Methods for Outlier Detection  
+| Group | Examples |
+|---|---|
+| Mammalia | Human, mouse, dog, horse, gorilla |
+| Aves | Chicken, zebra finch, falcon, crow |
+| Actinopterygii | Zebrafish, pufferfish, salmon, tilapia |
+| Reptilia | Lizard, snake, turtle, crocodile |
+| Amphibia | Frog, salamander |
+| Insecta | *Drosophila*, mosquito |
 
 ---
 
-## 👨‍💻 Author
+## Notebook
 
-**Tejaswantt Patibandla**  
-GitHub: https://github.com/tejaswantt
+`genome_analysis.ipynb` contains the full exploratory analysis:
+
+- Data extraction across 100+ species from Ensembl core databases
+- Feature engineering and taxonomy grouping
+- Outlier detection experiments using all three methods
+- Distribution and PCA visualizations per taxonomic group
+
+---
+
+## Status
+
+Active development — being built as part of a GSoC 2026 proposal for the Ensembl project under the Open Bioinformatics Foundation.
+
+Repository: [ensembl-annotation-analysis-2](https://github.com/tejaswantt/ensembl-annotation-analysis-2)
